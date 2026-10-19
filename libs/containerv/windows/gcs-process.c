@@ -211,10 +211,9 @@ int __lcow_gcs_execute_host_process(
     }
 
     if (__gcs_set_request_base(req, uvm_id) != 0 ||
-        json_object_set_new(params, "CommandArgs", args) != 0) {
+        json_object_set(params, "CommandArgs", args) != 0) {
         goto cleanup;
     }
-    args = NULL;
 
     if (containerv_json_object_set_string(params, "WorkingDirectory", "/") != 0 ||
         containerv_json_object_set_bool(params, "CreateInUtilityVM", 1) != 0 ||
@@ -223,10 +222,9 @@ int __lcow_gcs_execute_host_process(
         containerv_json_object_set_bool(params, "CreateStdErrPipe", 0) != 0 ||
         containerv_json_dumps_compact(params, &params_json) != 0 ||
         containerv_json_object_set_string(settings, "ProcessParameters", params_json) != 0 ||
-        json_object_set_new(req, "Settings", settings) != 0) {
+        json_object_set(req, "Settings", settings) != 0) {
         goto cleanup;
     }
-    settings = NULL;
 
     if (containerv_json_dumps_compact(req, &req_json) != 0 ||
         __lcow_gcs_rpc(container, CONTAINERV_LCOW_GCS_RPC_EXECUTE_PROCESS, req_json, &response_json) != 0) {
@@ -313,33 +311,47 @@ cleanup:
     return status;
 }
 
-int __hcs_lcow_configure_network(struct containerv_container* container)
+int __hcs_lcow_configure_network(struct containerv_container* container,
+    const char* address, const char* gateway, const char* dns)
 {
     static const char* const uvm_id = "00000000-0000-0000-0000-000000000000";
-    static const char* const argv[] = {
+    const char* const argv[] = {
         "/bin/busybox",
         "sh",
         "-c",
-        "exec >/dev/kmsg 2>&1; "
-        "/bin/busybox ip -o link; "
-        "exec /bin/busybox timeout 30 /bin/busybox udhcpc -i eth0 -q -n -t 5 -T 2 -A 1 -s /usr/share/udhcpc/default.script",
+        "exec >/dev/kmsg 2>&1; set -eu; bb=/bin/busybox; "
+        "if [ -n \"$1\" ]; then "
+        "  family=-4; case \"$1\" in *:*) family=-6;; esac; "
+        "  $bb ip link set dev eth0 up; "
+        "  $bb ip $family addr flush dev eth0; "
+        "  $bb ip $family addr add \"$1\" dev eth0; "
+        "  if [ -n \"$2\" ]; then $bb ip $family route replace default via \"$2\" dev eth0; fi; "
+        "else "
+        "  $bb timeout 30 $bb udhcpc -i eth0 -q -n -t 5 -T 2 -A 1 -s /usr/share/udhcpc/default.script; "
+        "fi; "
+        "if [ -n \"$3\" ]; then "
+        "  servers=$(printf '%s' \"$3\" | $bb tr ',;' '  '); "
+        "  set -f; : > /chef/rootfs/chef/resolv.conf; "
+        "  for server in $servers; do printf 'nameserver %s\\n' \"$server\" >> /chef/rootfs/chef/resolv.conf; done; "
+        "fi",
+        "chef-lcow-network", address ? address : "", gateway ? gateway : "", dns ? dns : "",
         NULL
     };
     struct containerv_lcow_gcs_process process = {0};
     unsigned long exit_code = 0;
 
     if (__lcow_gcs_execute_host_process(container, argv, &process.pid) != 0) {
-        VLOG_ERROR("containerv[gcs]", "failed to start LCOW DHCP client\n");
+        VLOG_ERROR("containerv[gcs]", "failed to start LCOW network configuration\n");
         return -1;
     }
 
     process.magic = CONTAINERV_LCOW_GCS_PROCESS_MAGIC;
     snprintf(process.container_id, sizeof(process.container_id), "%s", uvm_id);
     if (__hcs_wait_lcow_gcs_process(container, &process, &exit_code) != 0 || exit_code != 0) {
-        VLOG_ERROR("containerv[gcs]", "LCOW DHCP client failed with exit code %lu\n", exit_code);
+        VLOG_ERROR("containerv[gcs]", "LCOW network configuration failed with exit code %lu\n", exit_code);
         return -1;
     }
 
-    VLOG_DEBUG("containerv[gcs]", "LCOW DHCP configuration completed\n");
+    VLOG_DEBUG("containerv[gcs]", "LCOW network configuration completed\n");
     return 0;
 }

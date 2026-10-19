@@ -302,7 +302,8 @@ extern int __hcs_wait_lcow_gcs_process(
     struct containerv_container* container,
     const struct containerv_lcow_gcs_process* process,
     unsigned long* exit_code);
-extern int __hcs_lcow_configure_network(struct containerv_container* container);
+extern int __hcs_lcow_configure_network(struct containerv_container* container,
+    const char* address, const char* gateway, const char* dns);
 
 struct containerv_container {
     // HCS compute system handle and configuration
@@ -438,9 +439,6 @@ extern int __hcs_network_adapter_add(
     const char*                  mac_address
 );
 
-extern int __hcs_lcow_configure_network(
-    struct containerv_container* container
-);
 
 /**
  * @brief Create and start an HCS container compute system (schema1 container config).

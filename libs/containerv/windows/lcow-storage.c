@@ -114,17 +114,19 @@ int __lcow_storage_prepare(struct containerv_container* container)
         parameters.Version2.BlockSizeInBytes = 2 * 1024 * 1024;
         parameters.Version2.SectorSizeInBytes = 512;
         parameters.Version2.PhysicalSectorSizeInBytes = 4096;
-        error = CreateVirtualDisk(&type, disk_path, VIRTUAL_DISK_ACCESS_NONE, NULL,
-            CREATE_VIRTUAL_DISK_FLAG_NONE, 0, &parameters, NULL, &disk);
-        if (error != ERROR_SUCCESS) {
-            VLOG_ERROR("containerv", "failed to create LCOW disk %s (error=%lu)\n", container->lcow_disk_path, error);
+        // Record ownership of an unfinished initialization before creating the
+        // disk. An interruption must not turn a new disk into a published one.
+        disk = CreateFileA(container->lcow_disk_pending, GENERIC_WRITE, 0, NULL,
+            OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (disk == INVALID_HANDLE_VALUE) {
             errno = EIO;
             goto cleanup;
         }
         CloseHandle(disk);
-        disk = CreateFileA(container->lcow_disk_pending, GENERIC_WRITE, 0, NULL,
-            CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-        if (disk == INVALID_HANDLE_VALUE) {
+        error = CreateVirtualDisk(&type, disk_path, VIRTUAL_DISK_ACCESS_NONE, NULL,
+            CREATE_VIRTUAL_DISK_FLAG_NONE, 0, &parameters, NULL, &disk);
+        if (error != ERROR_SUCCESS) {
+            VLOG_ERROR("containerv", "failed to create LCOW disk %s (error=%lu)\n", container->lcow_disk_path, error);
             errno = EIO;
             goto cleanup;
         }

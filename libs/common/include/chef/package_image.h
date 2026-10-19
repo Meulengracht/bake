@@ -22,6 +22,10 @@
 #include <chef/list.h>
 #include <chef/package_manifest.h>
 
+// forward declarations
+struct recipe;
+struct recipe_pack;
+
 /**
  * @brief Package image construction API.
  *
@@ -49,5 +53,23 @@ struct chef_package_image_options {
  * @return 0 on success, -1 on failure with errno set.
  */
 extern int chef_package_image_create(const struct chef_package_image_options* options);
+
+/** 
+ * @brief Generates a package manifest from a recipe and pack.
+ * 
+ * @param recipe The recipe to generate the manifest from.
+ * @param platform The target platform.
+ * @param architecture The target architecture.
+ * @param pack The recipe pack containing the staged files.
+ * @param manifestOut Output pointer for the generated manifest.
+ *
+ * @return 0 on success, -1 on failure with errno set.
+ */
+extern int chef_package_manifest_from_recipe(
+    struct recipe*                 recipe,
+    const char*                    platform,
+    const char*                    architecture,
+    struct recipe_pack*            pack,
+    struct chef_package_manifest** manifestOut);
 
 #endif //!__CHEF_PACKAGE_IMAGE_H__

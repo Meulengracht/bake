@@ -425,6 +425,17 @@ static char* __windows_hns_create_and_attach_endpoint(
 
     // Parse "<endpointId>|<applied>|<mac>".
     char* bar = strchr(out, '|');
+    // platform_exec also captures stderr. Never interpret a PowerShell error
+    // as an endpoint identifier or interpolate it into a cleanup command.
+    if (bar == NULL || bar - out != 36 ||
+        out[8] != '-' || out[13] != '-' || out[18] != '-' || out[23] != '-' ||
+        strspn(out, "0123456789abcdefABCDEF-") != 36 ||
+        (bar[1] != '0' && bar[1] != '1') || bar[2] != '|') {
+        VLOG_ERROR("containerv[net]", "HNS endpoint creation returned no valid endpoint: %s\n", out);
+        free(out);
+        errno = EIO;
+        return NULL;
+    }
     if (bar != NULL) {
         *bar = '\0';
         __trim_whitespace_inplace(out);
@@ -671,6 +682,24 @@ int __windows_prepare_hcs_container_network(
     return 0;
 }
 
+static int __configure_lcow_network(struct containerv_container* container,
+    const struct containerv_options* options)
+{
+    char address[128] = "";
+    const char* ip = options->network.container_ip;
+    const char* gateway = options->network.gateway_ip ? options->network.gateway_ip : options->network.host_ip;
+    if (ip != NULL) {
+        int prefix;
+        if (__parse_prefix_any(options->network.container_netmask, &prefix) != 0 ||
+            (!__is_ipv6_addr(ip) && prefix > 32) || strlen(ip) > 64) {
+            errno = EINVAL;
+            return -1;
+        }
+        snprintf(address, sizeof(address), "%s/%d", ip, prefix);
+    }
+    return __hcs_lcow_configure_network(container, address, gateway, options->network.dns);
+}
+
 int __windows_configure_hcs_container_network(
     struct containerv_container* container,
     struct containerv_options* options)
@@ -690,7 +719,7 @@ int __windows_configure_hcs_container_network(
 
     if (container->hns_endpoint_predeclared) {
         VLOG_DEBUG("containerv[net]", "HNS endpoint %s was attached during utility VM creation\n", container->hns_endpoint_id);
-        if (!container->guest_is_windows && __hcs_lcow_configure_network(container) != 0) {
+        if (!container->guest_is_windows && __configure_lcow_network(container, options) != 0) {
             return -1;
         }
         container->network_configured = 1;
@@ -727,7 +756,23 @@ int __windows_configure_hcs_container_network(
     }
 
     container->hns_endpoint_id = endpoint_id;
-    if (__hcs_network_adapter_add(container, endpoint_id, endpoint_id, mac_address) != 0) {
+    int attach_status;
+    if (container->guest_is_windows) {
+        char script[1024];
+        char* endpoint = __ps_escape_single_quoted(endpoint_id);
+        char* id = __ps_escape_single_quoted(container->id);
+        if (endpoint == NULL || id == NULL) {
+            free(endpoint); free(id); free(mac_address);
+            return -1;
+        }
+        snprintf(script, sizeof(script), "$ErrorActionPreference='Stop'; Import-Module HostNetworkingService; "
+            "Attach-HnsEndpoint -EndpointId '%s' -ContainerId '%s' | Out-Null", endpoint, id);
+        free(endpoint); free(id);
+        attach_status = __execute_powershell_command(script);
+    } else {
+        attach_status = __hcs_network_adapter_add(container, endpoint_id, endpoint_id, mac_address);
+    }
+    if (attach_status != 0) {
         VLOG_ERROR("containerv[net]", "failed to attach HNS endpoint %s to utility VM\n", endpoint_id);
         free(mac_address);
         return -1;
@@ -736,7 +781,9 @@ int __windows_configure_hcs_container_network(
 
     VLOG_DEBUG("containerv[net]", "attached HNS endpoint %s to utility VM\n", container->hns_endpoint_id);
 
-    if (!policies_applied) {
+    if (!container->guest_is_windows) {
+        if (__configure_lcow_network(container, options) != 0) return -1;
+    } else if (!policies_applied) {
         // Fallback: configure static IP/DNS inside the container (best-effort).
         if (__windows_configure_container_network_in_hcs_container(container, options) != 0) {
             // Keep endpoint attached; allow caller to proceed.

@@ -114,6 +114,7 @@ int platform_spawn_argv(const char* path, const char* const* arguments,
 {
     posix_spawn_file_actions_t actions;
     pid_t                      pid;
+    pid_t                      waited;
     char**                     argv;
     int                        status = -1;
     int                        outp[2] = { -1, -1 };
@@ -225,7 +226,11 @@ int platform_spawn_argv(const char* path, const char* const* arguments,
     }
 
     // Return the child exit code, not waitpid's encoded status.
-    if (waitpid(pid, &status, 0) < 0) {
+    do {
+        waited = waitpid(pid, &status, 0);
+    } while (waited < 0 && errno == EINTR);
+    
+    if (waited < 0) {
         status = -1;
     } else if (WIFEXITED(status)) {
         status = WEXITSTATUS(status);

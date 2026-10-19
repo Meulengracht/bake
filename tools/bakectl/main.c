@@ -34,6 +34,7 @@ extern int source_main(int argc, char** argv, struct __bakelib_context* context,
 extern int build_main(int argc, char** argv, struct __bakelib_context* context, struct bakectl_command_options* options);
 extern int clean_main(int argc, char** argv, struct __bakelib_context* context, struct bakectl_command_options* options);
 extern int stage_main(int argc, char** argv, struct __bakelib_context* context, struct bakectl_command_options* options);
+extern int pack_main(int argc, char** argv, struct __bakelib_context* context, struct bakectl_command_options* options);
 
 struct command_handler {
     char* name;
@@ -46,6 +47,7 @@ static struct command_handler g_commands[] = {
     { "build",  build_main },
     { "clean",  clean_main },
     { "stage",  stage_main },
+    { "pack", pack_main },
 };
 
 static void __print_help(void)
@@ -61,6 +63,7 @@ static void __print_help(void)
     printf("  build       runs the build backend of the specified part and step\n");
     printf("  clean       runs the clean backend of the specified part and step\n");
     printf("  stage       stages the runtime ingredients\n");
+    printf("  pack        creates a package on the guest filesystem (--pack-name NAME --output PATH)\n");
     printf("\n");
     printf("Options:\n");
     printf("  -r, --recipe\n");

@@ -5,7 +5,7 @@ param(
     [string]$LcowUvmUrl,
     [string]$LcowUvmArchive,
     [string]$LcowUvmDir,
-    [string]$GuestBakectlPath,
+    [string]$RootfsArchive,
     [switch]$PrepareLcowUvm,
     [switch]$KeepWorkDir
 )
@@ -61,7 +61,7 @@ function Invoke-ChefCommand {
         if ($LogPath) {
             & $FilePath @Arguments *> $LogPath
         } else {
-            & $FilePath @Arguments
+            & $FilePath @Arguments | Out-Host
         }
 
         return $LASTEXITCODE
@@ -107,73 +107,6 @@ function Get-ChefArchitecture {
         'ARM64' { return 'arm64' }
         'x86' { return 'i386' }
         default { return $env:PROCESSOR_ARCHITECTURE.ToLowerInvariant() }
-    }
-}
-
-function Set-JsonProperty {
-    param(
-        [Parameter(Mandatory = $true)]
-        [pscustomobject]$Object,
-        [Parameter(Mandatory = $true)]
-        [string]$Name,
-        [Parameter(Mandatory = $true)]
-        [object]$Value
-    )
-
-    if ($Object.PSObject.Properties.Name -contains $Name) {
-        $Object.$Name = $Value
-    } else {
-        Add-Member -InputObject $Object -MemberType NoteProperty -Name $Name -Value $Value
-    }
-}
-
-function Set-BakeLcowUvmUrl {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Url
-    )
-
-    $configDir = Join-Path $env:APPDATA 'chef'
-    $configPath = Join-Path $configDir 'bake.json'
-    $backupPath = $null
-
-    New-Item -ItemType Directory -Force -Path $configDir | Out-Null
-    if (Test-Path $configPath) {
-        $backupPath = Join-Path ([System.IO.Path]::GetTempPath()) ("chef-bake-json-" + [Guid]::NewGuid().ToString('N'))
-        Copy-Item -Path $configPath -Destination $backupPath -Force
-        $config = Get-Content $configPath -Raw | ConvertFrom-Json
-    } else {
-        $config = [pscustomobject]@{}
-    }
-
-    if (-not ($config.PSObject.Properties.Name -contains 'lcow') -or -not $config.lcow) {
-        Set-JsonProperty -Object $config -Name 'lcow' -Value ([pscustomobject]@{})
-    }
-    Set-JsonProperty -Object $config.lcow -Name 'uvm-url' -Value $Url
-    $configJson = $config | ConvertTo-Json -Depth 16
-    $tempConfigPath = "$configPath.$([Guid]::NewGuid().ToString('N')).tmp"
-    [System.IO.File]::WriteAllText($tempConfigPath, $configJson, [System.Text.UTF8Encoding]::new($false))
-    Move-Item -Path $tempConfigPath -Destination $configPath -Force
-
-    return [pscustomobject]@{
-        Path = $configPath
-        BackupPath = $backupPath
-        Created = -not $backupPath
-    }
-}
-
-function Restore-BakeConfig {
-    param([pscustomobject]$State)
-
-    if (-not $State) {
-        return
-    }
-
-    if ($State.BackupPath) {
-        Copy-Item -Path $State.BackupPath -Destination $State.Path -Force
-        Remove-Item -Force $State.BackupPath -ErrorAction SilentlyContinue
-    } elseif ($State.Created -and (Test-Path $State.Path)) {
-        Remove-Item -Force $State.Path -ErrorAction SilentlyContinue
     }
 }
 
@@ -255,15 +188,33 @@ Test-HostPrerequisites
 if (-not $WorkDir) {
     $WorkDir = Join-Path ([System.IO.Path]::GetTempPath()) ("chef-hello-build-" + [Guid]::NewGuid().ToString('N'))
 }
+if (Test-Path -LiteralPath $WorkDir) {
+    throw "WorkDir must be a new directory owned by this test: $WorkDir"
+}
 New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
 $WorkDir = (Resolve-Path $WorkDir).Path
 
 $cvdLog = Join-Path $WorkDir 'cvd.log'
 $cvdErrorLog = Join-Path $WorkDir 'cvd.err.log'
 $bakeLog = Join-Path $WorkDir 'bake-build.log'
+$bakeErrorLog = Join-Path $WorkDir 'bake-build.err.log'
 $preparedUvmDir = Join-Path $WorkDir 'lcow-uvm'
-$bakeConfigState = $null
-$previousGuestBakectl = $env:CHEF_GUEST_BAKECTL
+$stateRoot = Join-Path $WorkDir 'state'
+$configDir = Join-Path $stateRoot 'chef'
+New-Item -ItemType Directory -Force -Path (Join-Path $configDir 'config') | Out-Null
+# Select a private loopback port; Gracht's Windows transport uses AcceptEx.
+$portProbe = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
+$portProbe.Start()
+$port = $portProbe.LocalEndpoint.Port
+$portProbe.Stop()
+$address = @{ type = 'inet4'; address = '127.0.0.1'; port = $port }
+$daemonConfig = @{ 'api-address' = $address } | ConvertTo-Json -Depth 8
+[IO.File]::WriteAllText((Join-Path $configDir 'config/cvd.json'), $daemonConfig)
+if ($RootfsArchive) {
+    $cacheDir = Join-Path $configDir 'cache/rootfs'
+    New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
+    Copy-Item -LiteralPath (Resolve-Path $RootfsArchive).Path -Destination (Join-Path $cacheDir "ubuntu-base-24.04-base-$(Get-ChefArchitecture).tar.gz")
+}
 
 try {
     Write-Host '=== hello-build-windows ==='
@@ -275,14 +226,7 @@ try {
     Write-Host "cvd built:  $((Get-Item $cvd).LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss'))"
     Write-Host "bake built: $((Get-Item $bake).LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss'))"
 
-    if (-not $GuestBakectlPath) {
-        $GuestBakectlPath = Join-Path $repoRoot 'build-lcow-guest\bin\bakectl'
-    }
-    if (-not (Test-Path $GuestBakectlPath)) {
-        throw "Linux ARM64 guest bakectl not found: $GuestBakectlPath"
-    }
-    $env:CHEF_GUEST_BAKECTL = (Resolve-Path $GuestBakectlPath).Path
-    Write-Host "guest tool: $env:CHEF_GUEST_BAKECTL"
+    Write-Host 'Using bakectl shipped in the Chef rootfs (built against its guest libraries).'
 
     if ($LcowUvmDir) {
         if ($LcowUvmUrl -or $LcowUvmArchive) {
@@ -322,24 +266,52 @@ try {
 
     if ($LcowUvmUrl) {
         Write-Host "Using LCOW UVM URL for bake: $LcowUvmUrl"
-        $bakeConfigState = Set-BakeLcowUvmUrl -Url $LcowUvmUrl
+
     }
+
+    $config = @{ 'cvd-address' = $address }
+    if ($LcowUvmUrl) { $config.lcow = @{ 'uvm-url' = $LcowUvmUrl } }
+    [IO.File]::WriteAllText((Join-Path $configDir 'bake.json'), ($config | ConvertTo-Json -Depth 8))
 
     Copy-Item -Path $recipePath -Destination (Join-Path $WorkDir 'hello.yaml') -Force
     Copy-Item -Path $recipeSource -Destination (Join-Path $WorkDir 'hello-world') -Recurse -Force
+    # Exercise metadata that would be lost by copying the install tree to NTFS.
+    Add-Content -LiteralPath (Join-Path $WorkDir 'hello-world/CMakeLists.txt') -Value @'
+install(CODE [[
+  file(CREATE_LINK hello-world "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/bin/hello-link" SYMBOLIC)
+]])
+'@
 
     Write-Host 'Starting cvd...'
-    $cvdProcess = Start-Process -FilePath $cvd -ArgumentList @('-vv') -RedirectStandardOutput $cvdLog -RedirectStandardError $cvdErrorLog -PassThru -WindowStyle Hidden
+    $cvdProcess = Start-Process -FilePath $cvd -ArgumentList @('-vv', '--root', ('"' + $stateRoot + '"')) -RedirectStandardOutput $cvdLog -RedirectStandardError $cvdErrorLog -PassThru -WindowStyle Hidden
     try {
         Wait-CvdReady -Process $cvdProcess -LogPath $cvdLog
 
-        Write-Host 'Building hello.yaml with bake...'
-        $bakeCode = Invoke-ChefCommand -FilePath $bake -Arguments @('-v', 'build', 'hello.yaml') -WorkingDirectory $WorkDir -LogPath $bakeLog
-        if ($bakeCode -ne 0) {
-            throw "bake build failed with exit code $bakeCode. See $bakeLog"
+        foreach ($attempt in 1..2) {
+            if ($attempt -eq 2) {
+                $bakeLog = Join-Path $WorkDir 'bake-rebuild.log'
+                $bakeErrorLog = Join-Path $WorkDir 'bake-rebuild.err.log'
+                # The cached run must deliver a new artifact, not reuse this one.
+                Get-ChildItem -LiteralPath $WorkDir -Filter '*.pack' -File | Remove-Item
+            }
+            Write-Host "Building hello.yaml with bake (attempt $attempt, cold then cached)..."
+            $bakeProcess = Start-Process -FilePath $bake -ArgumentList @('--root', ('"' + $stateRoot + '"'), '-v', 'build', 'hello.yaml', '--platform', 'linux') -WorkingDirectory $WorkDir -RedirectStandardOutput $bakeLog -RedirectStandardError $bakeErrorLog -PassThru -WindowStyle Hidden
+            if (-not $bakeProcess.WaitForExit(20 * 60 * 1000)) {
+                throw "bake build timed out after 20 minutes. See $bakeLog"
+            }
+            if ($bakeProcess.ExitCode -ne 0) {
+                throw "bake build failed with exit code $($bakeProcess.ExitCode). See $bakeLog"
+            }
+            if (-not (Get-ChildItem -LiteralPath $WorkDir -Filter '*.pack' -File)) {
+                throw "Build attempt $attempt produced no package. See $bakeLog"
+            }
         }
     }
     finally {
+        if ($bakeProcess -and -not $bakeProcess.HasExited) {
+            Stop-Process -Id $bakeProcess.Id -Force
+            $bakeProcess.WaitForExit()
+        }
         if ($cvdProcess -and -not $cvdProcess.HasExited) {
             Stop-Process -Id $cvdProcess.Id -Force
             $cvdProcess.WaitForExit()
@@ -356,6 +328,12 @@ try {
             throw "Empty .pack artifact: $($packFile.FullName)"
         }
         Write-Host "artifact: $($packFile.Name) ($($packFile.Length) bytes)"
+        $verify = Resolve-Exe 'verify_hello_package' @(
+            (Join-Path $BuildDir "libs/common/$Configuration/verify_hello_package.exe"),
+            (Join-Path $BuildDir 'libs/common/verify_hello_package.exe'))
+        if ((Invoke-ChefCommand -FilePath $verify -Arguments @($packFile.FullName)) -ne 0) {
+            throw "Package content verification failed: $($packFile.FullName)"
+        }
     }
 
     Write-Host 'PASS: hello-build-windows'
@@ -374,17 +352,13 @@ catch {
         Write-Host "--- bake-build.log ---"
         Get-Content $bakeLog -Tail 200
     }
+    if (Test-Path $bakeErrorLog) {
+        Write-Host "--- bake stderr ---"
+        Get-Content $bakeErrorLog -Tail 200
+    }
     throw
 }
 finally {
-    Restore-BakeConfig -State $bakeConfigState
-
-    if ($null -eq $previousGuestBakectl) {
-        Remove-Item Env:CHEF_GUEST_BAKECTL -ErrorAction SilentlyContinue
-    } else {
-        $env:CHEF_GUEST_BAKECTL = $previousGuestBakectl
-    }
-
     if (-not $KeepWorkDir) {
         Remove-Item -Recurse -Force $WorkDir -ErrorAction SilentlyContinue
     } else {

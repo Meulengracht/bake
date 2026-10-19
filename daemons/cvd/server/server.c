@@ -332,10 +332,6 @@ static enum chef_status __create_linux_container(const struct chef_create_parame
             __is_nonempty(params->network.gateway_ip) ? params->network.gateway_ip : NULL,
             __is_nonempty(params->network.dns) ? params->network.dns : NULL
         );
-    } else if (params->gtype == CHEF_GUEST_TYPE_LINUX) {
-        // LCOW utility VMs need an HNS endpoint even when the caller relies on
-        // the Default Switch's dynamic network configuration.
-        containerv_options_set_network_ex(containerParams->opts, NULL, NULL, NULL, NULL, NULL);
     }
 
     // setup other config
@@ -345,8 +341,7 @@ static enum chef_status __create_linux_container(const struct chef_create_parame
         CV_CAP_IPC;
 
     // Enable network capability if requested by policy profile or network configuration.
-    if (params->gtype == CHEF_GUEST_TYPE_LINUX ||
-        __spec_contains_plugin(&params->policy, "network") ||
+    if (__spec_contains_plugin(&params->policy, "network") ||
         (__is_nonempty(params->network.container_ip) 
             && __is_nonempty(params->network.container_netmask))) {
         caps |= CV_CAP_NETWORK;
@@ -702,23 +697,29 @@ enum chef_status cvd_create(const struct chef_create_parameters* params, const c
 
 static int __split_command(const char* line, char** command, char** arguments)
 {
-    char        buffer[1024] = { 0 };
-    const char* p = strchr(line, ' ');
-
-    if (p != NULL) {
-        strncpy(&buffer[0], line, p - line);
-        *command = platform_strdup(&buffer[0]);
-        *arguments = platform_strdup(p + 1);
-        if (*command == NULL || *arguments == NULL) {
-            free(*command);
-            return -1;
-        }
-    } else {
-        *command = platform_strdup(line);
-        if (*command == NULL) {
-            return -1;
-        }
+    char* copy = platform_strdup(line);
+    char** argv;
+    int argc;
+    if (copy == NULL) return -1;
+    argv = strargv(copy, NULL, &argc);
+    if (argv == NULL || argc == 0 || argv[0][0] == '\0') {
+        strargv_free(argv);
+        free(copy);
+        errno = EINVAL;
+        return -1;
+    }
+    // Parse and serialize with the same quoting rules used by containerv.
+    // This also handles quoted executable paths without a fixed-size buffer.
+    *command = platform_strdup(argv[0]);
+    *arguments = strargv_windows((const char* const*)(argv + 1));
+    strargv_free(argv);
+    free(copy);
+    if (*command == NULL || *arguments == NULL) {
+        free(*command);
+        free(*arguments);
+        *command = NULL;
         *arguments = NULL;
+        return -1;
     }
     return 0;
 }

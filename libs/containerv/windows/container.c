@@ -760,7 +760,8 @@ int containerv_create(
         if (container->hcs_system != NULL) {
             // True container compute system (WCOW/LCOW): attach HNS endpoint on the host.
             if (__windows_configure_hcs_container_network(container, options) != 0) {
-                VLOG_WARNING("containerv", "containerv_create: HCS container network setup encountered issues\n");
+                VLOG_ERROR("containerv", "containerv_create: required network setup failed\n");
+                goto failure;
             }
         }
     }

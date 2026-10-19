@@ -104,6 +104,8 @@ The utility VM must provide Hyper-V SCSI, SCSI disk, and ext4 kernel support, `/
 
 `bakectl source` creates a source alias on native writable storage pointing into the shared project. There is no compile-time Windows switch or silent copy fallback. This keeps host edits visible and preserves the existing read-only project semantics. Source trees already containing links still depend on the host share's ability to represent those links.
 
+For LCOW, `bake` also invokes `bakectl pack --pack-name NAME` inside the guest: packaging reads the native install tree and writes a `.pack` file to staging, then downloads that opaque artifact to the host. Packages are selected by their unique recipe names, independently of recipe order. This preserves Linux permissions and symlinks without copying the install tree through NTFS. Native Linux and WCOW retain their host packaging path, using the same manifest construction code.
+
 Validation: `containerv_windows_preflight_test` runs without Hyper-V and checks rejection of unenforced resource limits, disk creation/reuse, exclusive locking, and exclusion of disk state from image clones. Run `containerv_lcow_storage_test.exe <uvm-directory> <static-linux-busybox>` from an elevated terminal on an LCOW-capable host for cold/warm disk initialization, cross-command and cross-VM persistence, symlinks, executable permissions, read-only shares, and live host edits. `platform_copydir_test` on Linux covers relative/dangling/cyclic links, modes, and rejection of unsupported special files. The guest script can also be tested independently with real ext4 disks in WSL: `sudo unshare --mount --propagation private bash tests/system/cases/lcow/test-native-storage.sh <initrd> libs/containerv/windows/lcow-storage.sh`.
 
 ### Runtime Ownership
@@ -120,7 +122,7 @@ Without explicit DNS settings, OCI preparation preserves the image's existing `/
 
 LCOW then seeds `/chef/resolv.conf` from the prepared resolver. The OCI spec bind-mounts this backing file read-only at `/etc/resolv.conf`, because GCS otherwise generates an empty resolver for these host-networked containers. The utility VM's DHCP lease handler updates the backing file with lease-provided DNS, including on renewal.
 
-There is no additional Windows-specific hardcoded public DNS address. The image resolver is a fallback, not a guarantee that its servers are reachable from the selected HNS network. DHCP can replace even an explicitly seeded resolver; a persistent explicit-DNS override would require coordination with the guest lease handler and is not currently guaranteed.
+There is no additional Windows-specific hardcoded public DNS address. The image resolver is a fallback, not a guarantee that its servers are reachable from the selected HNS network. Static addresses and gateways are applied in the guest without running DHCP. With dynamic addressing, explicit DNS is reapplied after the initial lease; later DHCP renewals can still replace it, so a persistent explicit-DNS override would require coordination with the guest lease handler.
 
 ### Enforcement Limitations
 

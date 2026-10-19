@@ -28,219 +28,6 @@
 #include <string.h>
 #include <vlog.h>
 
-static char* __duplicate_optional_string(const char* string)
-{
-    if (string == NULL) {
-        return NULL;
-    }
-    return platform_strdup(string);
-}
-
-static const char* __resolve_variable(const char* name, void* context)
-{
-    (void)name;
-    (void)context;
-    return NULL;
-}
-
-static int __read_file_blob(const char* path, struct chef_package_blob* blob)
-{
-    FILE* file;
-    long  fileSize;
-
-    blob->data = NULL;
-    blob->size = 0;
-    if (path == NULL) {
-        return 0;
-    }
-
-    file = fopen(path, "rb");
-    if (file == NULL) {
-        VLOG_ERROR("bake", "failed to open blob file %s\n", path);
-        return -1;
-    }
-
-    fseek(file, 0, SEEK_END);
-    fileSize = ftell(file);
-    fseek(file, 0, SEEK_SET);
-    if (fileSize <= 0) {
-        fclose(file);
-        return 0;
-    }
-
-    blob->data = malloc((size_t)fileSize);
-    if (blob->data == NULL) {
-        fclose(file);
-        errno = ENOMEM;
-        return -1;
-    }
-
-    if (fread((void*)blob->data, 1, (size_t)fileSize, file) != (size_t)fileSize) {
-        VLOG_ERROR("bake", "failed to read blob file %s\n", path);
-        fclose(file);
-        free((void*)blob->data);
-        blob->data = NULL;
-        blob->size = 0;
-        return -1;
-    }
-    fclose(file);
-    blob->size = (size_t)fileSize;
-    return 0;
-}
-
-static int __copy_string_list(struct list* list, struct chef_package_string_array* array)
-{
-    struct list_item* item;
-    size_t            index = 0;
-
-    array->values = NULL;
-    array->count = 0;
-    if (list == NULL || list->count == 0) {
-        return 0;
-    }
-
-    array->values = calloc((size_t)list->count, sizeof(char*));
-    if (array->values == NULL) {
-        errno = ENOMEM;
-        return -1;
-    }
-    array->count = (size_t)list->count;
-
-    list_foreach(list, item) {
-        struct list_item_string* value = (struct list_item_string*)item;
-
-        ((char**)array->values)[index] = platform_strdup(value->value);
-        if (((char**)array->values)[index] == NULL) {
-            errno = ENOMEM;
-            return -1;
-        }
-        index++;
-    }
-    return 0;
-}
-
-static int __build_manifest_toolchain_targets(
-    struct chef_package_manifest* manifest,
-    struct recipe_pack*           pack)
-{
-    struct list_item* item;
-    size_t index = 0;
-
-    if (pack->toolchain.targets.count == 0) {
-        return 0;
-    }
-
-    manifest->toolchain.targets = calloc(pack->toolchain.targets.count,
-        sizeof(struct chef_package_manifest_toolchain_target));
-    if (manifest->toolchain.targets == NULL) {
-        errno = ENOMEM;
-        return -1;
-    }
-    manifest->toolchain.targets_count = pack->toolchain.targets.count;
-
-    list_foreach(&pack->toolchain.targets, item) {
-        struct recipe_pack_toolchain_target* source =
-            (struct recipe_pack_toolchain_target*)item;
-        struct chef_package_manifest_toolchain_target* target =
-            &manifest->toolchain.targets[index++];
-
-        target->name = __duplicate_optional_string(source->name);
-        target->triple = __duplicate_optional_string(source->triple);
-        if (target->name == NULL ||
-            (source->triple != NULL && target->triple == NULL) ||
-            __copy_string_list(&source->compiler_args, &target->compiler_args) != 0) {
-            errno = ENOMEM;
-            return -1;
-        }
-    }
-    return 0;
-}
-
-static int __build_manifest_commands(
-    struct chef_package_manifest* manifest,
-    struct recipe_pack*           pack)
-{
-    struct list_item* item;
-    size_t            index = 0;
-
-    if (pack->commands.count == 0) {
-        return 0;
-    }
-
-    manifest->commands = calloc((size_t)pack->commands.count, sizeof(struct chef_package_manifest_command));
-    if (manifest->commands == NULL) {
-        errno = ENOMEM;
-        return -1;
-    }
-    manifest->commands_count = (size_t)pack->commands.count;
-
-    list_foreach(&pack->commands, item) {
-        struct recipe_pack_command*           command = (struct recipe_pack_command*)item;
-        struct chef_package_manifest_command* output = &manifest->commands[index];
-
-        output->type = command->type;
-        output->name = __duplicate_optional_string(command->name);
-        output->description = __duplicate_optional_string(command->description);
-        output->path = __duplicate_optional_string(command->path);
-        if (output->name == NULL || output->path == NULL) {
-            errno = ENOMEM;
-            return -1;
-        }
-
-        if (command->arguments.count > 0) {
-            output->arguments = chef_process_argument_list(&command->arguments, __resolve_variable, NULL);
-            if (output->arguments == NULL) {
-                return -1;
-            }
-        }
-
-        if (__read_file_blob(command->icon, &output->icon) != 0) {
-            return -1;
-        }
-        index++;
-    }
-    return 0;
-}
-
-static int __build_manifest_capabilities(
-    struct chef_package_manifest* manifest,
-    struct recipe_pack*           pack)
-{
-    struct list_item* item;
-    size_t            index = 0;
-
-    if (pack->capabilities.count == 0) {
-        return 0;
-    }
-
-    manifest->capabilities = calloc((size_t)pack->capabilities.count, sizeof(struct chef_package_manifest_capability));
-    if (manifest->capabilities == NULL) {
-        errno = ENOMEM;
-        return -1;
-    }
-    manifest->capabilities_count = (size_t)pack->capabilities.count;
-
-    list_foreach(&pack->capabilities, item) {
-        struct recipe_pack_capability*           capability = (struct recipe_pack_capability*)item;
-        struct chef_package_manifest_capability* output = &manifest->capabilities[index];
-
-        output->name = __duplicate_optional_string(capability->name);
-        if (output->name == NULL) {
-            errno = ENOMEM;
-            return -1;
-        }
-
-        if (strcmp(capability->name, "network-client") == 0) {
-            output->type = CHEF_PACKAGE_MANIFEST_CAPABILITY_ALLOW_LIST;
-            if (__copy_string_list(&capability->config.network_client.allow, &output->allow_list) != 0) {
-                return -1;
-            }
-        }
-        index++;
-    }
-    return 0;
-}
-
 static int __build_output_path(const char* outputDir, const char* packName, char** pathOut)
 {
     char basename[PATH_MAX];
@@ -253,74 +40,6 @@ static int __build_output_path(const char* outputDir, const char* packName, char
         errno = ENOMEM;
         return -1;
     }
-    return 0;
-}
-
-static int __build_manifest(
-    struct __bake_build_context*  bctx,
-    struct recipe_pack*           pack,
-    struct chef_package_manifest** manifestOut)
-{
-    struct chef_package_manifest* manifest;
-
-    manifest = calloc(1, sizeof(struct chef_package_manifest));
-    if (manifest == NULL) {
-        errno = ENOMEM;
-        return -1;
-    }
-
-    manifest->name = __duplicate_optional_string(pack->name);
-    manifest->platform = __duplicate_optional_string(bctx->target_platform);
-    manifest->architecture = __duplicate_optional_string(bctx->target_architecture);
-    manifest->base = __duplicate_optional_string(recipe_platform_base(bctx->recipe, bctx->target_platform));
-    manifest->summary = __duplicate_optional_string(pack->summary);
-    manifest->description = __duplicate_optional_string(pack->description);
-    manifest->license = __duplicate_optional_string(bctx->recipe->project.license);
-    manifest->eula = __duplicate_optional_string(bctx->recipe->project.eula);
-    manifest->maintainer = __duplicate_optional_string(bctx->recipe->project.author);
-    manifest->maintainer_email = __duplicate_optional_string(bctx->recipe->project.email);
-    manifest->homepage = __duplicate_optional_string(bctx->recipe->project.url);
-    manifest->application.network_gateway = __duplicate_optional_string(pack->app_options.gateway);
-    manifest->application.network_dns = __duplicate_optional_string(pack->app_options.dns);
-    manifest->toolchain.root = __duplicate_optional_string(pack->toolchain.root);
-    manifest->toolchain.cc = __duplicate_optional_string(pack->toolchain.cc);
-    manifest->toolchain.cxx = __duplicate_optional_string(pack->toolchain.cxx);
-    manifest->toolchain.ar = __duplicate_optional_string(pack->toolchain.ar);
-    manifest->toolchain.ranlib = __duplicate_optional_string(pack->toolchain.ranlib);
-    manifest->toolchain.strip = __duplicate_optional_string(pack->toolchain.strip);
-    manifest->toolchain.llvm_config = __duplicate_optional_string(pack->toolchain.llvm_config);
-    manifest->toolchain.cmake_file = __duplicate_optional_string(pack->toolchain.cmake_file);
-    manifest->type = pack->type;
-
-    if (manifest->name == NULL || manifest->platform == NULL || manifest->architecture == NULL ||
-        (pack->toolchain.root != NULL && manifest->toolchain.root == NULL) ||
-        (pack->toolchain.cc != NULL && manifest->toolchain.cc == NULL) ||
-        (pack->toolchain.cxx != NULL && manifest->toolchain.cxx == NULL) ||
-        (pack->toolchain.ar != NULL && manifest->toolchain.ar == NULL) ||
-        (pack->toolchain.ranlib != NULL && manifest->toolchain.ranlib == NULL) ||
-        (pack->toolchain.strip != NULL && manifest->toolchain.strip == NULL) ||
-        (pack->toolchain.llvm_config != NULL && manifest->toolchain.llvm_config == NULL) ||
-        (pack->toolchain.cmake_file != NULL && manifest->toolchain.cmake_file == NULL)) {
-        chef_package_manifest_free(manifest);
-        errno = ENOMEM;
-        return -1;
-    }
-
-    if (chef_package_manifest_parse_version(bctx->recipe->project.version, &manifest->version) != 0
-     || __read_file_blob(pack->icon, &manifest->icon) != 0
-     || __copy_string_list(&pack->options.bin_dirs, &manifest->ingredient.bin_dirs) != 0
-     || __copy_string_list(&pack->options.inc_dirs, &manifest->ingredient.inc_dirs) != 0
-     || __copy_string_list(&pack->options.lib_dirs, &manifest->ingredient.lib_dirs) != 0
-     || __copy_string_list(&pack->options.compiler_flags, &manifest->ingredient.compiler_flags) != 0
-     || __copy_string_list(&pack->options.linker_flags, &manifest->ingredient.linker_flags) != 0
-    || __build_manifest_toolchain_targets(manifest, pack) != 0
-     || __build_manifest_commands(manifest, pack) != 0
-     || __build_manifest_capabilities(manifest, pack) != 0) {
-        chef_package_manifest_free(manifest);
-        return -1;
-    }
-
-    *manifestOut = manifest;
     return 0;
 }
 
@@ -347,6 +66,45 @@ static int __stage_ingredients(struct __bake_build_context* bctx)
     );
 }
 
+static int __pack_in_guest(struct __bake_build_context* bctx, const char* name, const char* output)
+{
+    char*        guestPath = NULL;
+    unsigned int pid;
+    int          status;
+    char*        command;
+    const char*  args[9];
+
+    if (__build_output_path("/chef/staging", name, &guestPath) != 0) {
+        return -1;
+    }
+
+    args[0] = bctx->bakectl_path;
+    args[1] = "pack";
+    args[2] = "--recipe";
+    args[3] = bctx->recipe_path;
+    args[4] = "--pack-name";
+    args[5] = name;
+    args[6] = "--output";
+    args[7] = guestPath;
+    args[8] = NULL;
+    
+    command = strargv_windows(args);
+    if (command == NULL) {
+        free(guestPath);
+        return -1;
+    }
+
+    // Execute the packing
+    status = bake_client_spawn(bctx, command, CHEF_SPAWN_OPTIONS_WAIT, &pid);
+    free(command);
+    if (status == 0) {
+        // Download the packed file from the guest to the host.
+        status = bake_client_download(bctx, guestPath, output);
+    }
+    free(guestPath);
+    return status;
+}
+
 int build_step_pack(struct __bake_build_context* bctx)
 {
     struct list_item* item;
@@ -361,16 +119,38 @@ int build_step_pack(struct __bake_build_context* bctx)
     }
 
     list_foreach(&bctx->recipe->packs, item) {
-        struct recipe_pack*             pack = (struct recipe_pack*)item;
+        struct recipe_pack*               pack = (struct recipe_pack*)item;
         struct chef_package_image_options imageOptions;
         struct chef_package_manifest*     manifest = NULL;
         char*                             outputPath = NULL;
 
-        status = __build_manifest(bctx, pack, &manifest);
+        status = __build_output_path(bctx->host_cwd, pack->name, &outputPath);
+        
+        // Because the build's actual install tree now lives on the guest’s ext4 disk. 
+        // Windows can't directly read that tree, and the old host packaging path would read the 
+        // original seed directory—which doesn't contain the build output.
+        // Copying the install tree back through Plan9/NTFS would risk losing the Linux symlinks 
+        // and permissions we introduced ext4 to preserve. Instead, the rootfs-provided bakectl 
+        // reads the native install tree and creates the .pack inside LCOW. Windows then downloads that file.
+        // This applies only to Windows-hosted Linux builds. Native Linux and Windows-container builds retain host-side packaging.
+#ifdef _WIN32
+        if (status == 0 && bctx->guest_type == CHEF_GUEST_TYPE_LINUX) {
+            status = __pack_in_guest(bctx, pack->name, outputPath);
+        } else
+#endif
         if (status == 0) {
-            status = __build_output_path(bctx->host_cwd, pack->name, &outputPath);
-        }
-        if (status == 0) {
+            status = chef_package_manifest_from_recipe(
+                bctx->recipe,
+                bctx->target_platform,
+                bctx->target_architecture,
+                pack,
+                &manifest
+            );
+            if (status != 0) {
+                free(outputPath);
+                goto cleanup;
+            }
+            
             imageOptions.input_dir = bctx->install_path;
             imageOptions.output_path = outputPath;
             imageOptions.filters = &pack->filters;
